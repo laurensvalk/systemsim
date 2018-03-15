@@ -14,7 +14,7 @@ class LTI(System):
             F=None,
             x_initial=None,
             exogenous_input_function=None):
-        """Initialize"""
+        """Initialize."""
         # Store matrices
         self.A, self.B, self.C = A, B, C
 
@@ -50,7 +50,7 @@ class LTI(System):
 
 
 class Integrator(LTI):
-    """Define linear integrator model"""
+    """Define linear integrator model."""
 
     def __init__(self, x_initial):
         """Initialize ABC matrices and create integrator object."""

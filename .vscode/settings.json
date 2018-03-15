@@ -2,5 +2,7 @@
     "python.pythonPath": "/usr/bin/python3",
     "python.linting.pylintEnabled": false,
     "python.linting.flake8Enabled": true,
-    "python.linting.flake8Args": ["--ignore=E731,E226"],
+    "python.linting.flake8Args": [
+        "--ignore=E731,E226,N806,N803",
+    ],
 }

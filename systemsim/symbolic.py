@@ -3,17 +3,20 @@ from .mechanical import SimpleMechanicalSystem
 import sympy as sym
 import cloudpickle
 
+
 def save_lambda(filename, data):
     """Write a Python object (such as a lambda function) to a file"""
     # Save data to disk
     with open(filename, 'wb') as file_descriptor:
         file_descriptor.write(cloudpickle.dumps(data))
 
+
 def load_lambda(filename):
     """Load a Python object (such as a lambda function) from a file"""    
     # Load a dictionary of lambda equations
     with open(filename, 'rb') as f:    
         return cloudpickle.load(f)
+
 
 def make_C(M, q, q_dot):
     """Derive Coriolis matrix from mass matrix and generalized velocities"""
@@ -31,6 +34,7 @@ def make_C(M, q, q_dot):
     # Return the nested list as a matrix
     return sym.Matrix(ckj)
 
+
 def make_G(V, q):
     """Derive generalized gravity vector from potential energy expression"""
     # Shape to 1x1 matrix (scalar)
@@ -38,6 +42,7 @@ def make_G(V, q):
     
     # Return jacobian as a column vector
     return V.jacobian(q).T
+
 
 class SymbolicMechanicalSystem(SimpleMechanicalSystem):
     def __init__(self, modelfile, parameters, q_initial=None, q_dot_initial=None, exogenous_input_function=None):    

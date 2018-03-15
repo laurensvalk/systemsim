@@ -5,9 +5,9 @@ import copy
 class Interconnection(System):
     """Multiple systems connected through inputs and outputs"""
     def __init__(self, systems, system_connections,
-                input_connections=None,
-                exogenous_input_functions=None,
-                exogenous_output_functions=None):
+                 input_connections=None,
+                 exogenous_input_functions=None,
+                 exogenous_output_functions=None):
         """Initialize network"""
         # Store systems with names
         self.systems = systems
