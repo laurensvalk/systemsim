@@ -160,13 +160,13 @@ class Interconnection(System):
         # Return the undirected network topology
         return undirected_weighted_edges
 
-    def PostSimulationProcessing(self):
+    def post_simulation_processing(self):
         """Store network simulation for all subsystems"""
         state_trajectory_per_system = self.__as_state_per_system(self.state_trajectory)
         for (i, s) in self.systems.items():
             s.state_trajectory = state_trajectory_per_system[i]
             s.simulation_time = self.simulation_time
-            s.ComputeOutputTrajectory()
+            s.compute_output_trajectory()
 
 class DistributedSystem(Interconnection):
     """Interconnection of systems with a common type of interaction between neighboring agents"""
