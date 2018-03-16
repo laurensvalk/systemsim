@@ -91,11 +91,19 @@ class System():
         """Evaluate equations of motion."""
         return self.zero_state
 
+    def total_input(self, external_control_input, exogenous_input, state_feedback, time):
+        """Compute total input to system.
+
+        By default, this is the sum of the state feedback, the exogenous input,
+        and optionally an input from the network.
+        """
+        return external_control_input + exogenous_input + state_feedback
+
     def state_change(self, state, external_control_input, time):
         """Evaluate equations of motion subject to exogenous input."""
         exogenous_input = self.exogenous_input(time)
         state_feedback = self.state_feedback(state, time)
-        total_input = external_control_input + exogenous_input + state_feedback
+        total_input = self.total_input(external_control_input, exogenous_input, state_feedback, time)
         return self.equations_of_motion(state, total_input, time)
 
     def __state_change_ode(self, state, time):
