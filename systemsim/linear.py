@@ -11,7 +11,7 @@ class LTI(System):
             A,
             B,
             C,
-            F=None,
+            K=None,
             x_initial=None,
             exogenous_input_function=None):
         """Initialize."""
@@ -23,14 +23,14 @@ class LTI(System):
         n_inputs = self.B.shape[self.COL]
         n_outputs = self.C.shape[self.ROW]
 
-        # Set F matrix to zero if not supplied as argument
-        self.F = F if F is not None else np.zeros((n_inputs, n_states))
+        # Set k matrix to zero if not supplied as argument
+        self.K = K if K is not None else np.zeros((n_inputs, n_states))
 
-        # Throw an error if matrix x_dimensions are not compatible
+        # Throw an error if matrix x_dimensions are not compatible:
         assert A.shape[self.ROW] == A.shape[self.COL]
         assert A.shape[self.ROW] == B.shape[self.ROW] == C.shape[self.COL]
-        assert self.F.shape[self.ROW] == n_inputs
-        assert self.F.shape[self.COL] == n_states
+        assert self.K.shape[self.ROW] == n_inputs
+        assert self.K.shape[self.COL] == n_states
 
         # Initialize System object
         System.__init__(self, n_states, n_inputs, n_outputs,
@@ -42,7 +42,7 @@ class LTI(System):
 
     def state_feedback(self, state, time=None):
         """Output LTI state feedback."""
-        return -self.F@state
+        return -self.K@state
 
     def equations_of_motion(self, state, total_input, time=None):
         """Evaluate equations of motion for LTI."""
