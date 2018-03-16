@@ -1,39 +1,35 @@
 #!/usr/bin/env python3
 """Debug Script."""
-import numpy as np
-from systemsim.linear import LTI, Integrator
-from systemsim.network import Interconnection
 
-A = np.array([[-1]])
-B = C = np.array([[1]])
-one = np.array([1])
-zero = np.array([0])
-systems = {
-    'plant': LTI(A, B, C, x_initial=-1*one),
-    'controller': Integrator(zero)
-}
-system_connections = {
-    ('controller', 'plant'): 1,
-    ('plant', 'controller'): -1
+from sympy import symbols, Matrix
+from numpy import array
+from systemsim.symbolic import Equation
+
+# Ordered list of parameter names
+parameter_symbols = alpha, beta = symbols(['alpha', 'beta'])
+
+# Coordinate variables
+phi, x = q = Matrix(symbols(['phi', 'x']))
+phi_dot, x_dot = q_dot = Matrix(symbols(['\dot{phi}', '\dot{x}']))
+
+# A basic model with some equations
+model = {
+    'M': Equation(alpha*phi**2+beta*x**2, [q], parameter_symbols),
+    'C': Equation(alpha*phi**2+beta*x_dot**2, [q, q_dot], parameter_symbols)
 }
 
-input_connections = {
-    'reference': ['controller'],
-    'disturbance': ['plant']
-}
-exogenous_input_functions = {
-    'reference': lambda time: 2*one,
-    'disturbance': lambda time: one
-}
-exogenous_output_functions = {
-    'error': lambda output, through: output['plant'] - through['reference']
-}
-network = Interconnection(
-    systems, system_connections, input_connections,
-    exogenous_input_functions, exogenous_output_functions
-)
-time_steps = np.arange(start=0, stop=15, step=0.01)
-network.simulate(time_steps)
-for (system_name, system) in systems.items():
-    print(system_name)
-    print(system.plot_state_trajectory())
+# All of the above is generally run just once.
+# Below is what we would run many times in different simulations.
+pars = {'beta': 2, 'alpha': 1}
+
+# Substitute numeric values
+for (name, equation) in model.items():
+    equation.insert_parameters(pars)
+
+# Test evaluations
+q0 = array([0, 1])
+qdot0 = array([0, 1])
+
+print(model['M'].lambdified(q0, [1, 2]))
+print(model['M'].function(q0))
+print(model['C'].function(q0, qdot0))

@@ -52,10 +52,20 @@ class System():
         else:
             self.exogenous_input = exogenous_input_function
 
-        # Store default signal names that may be overwritten by other classes
-        self.state_names = ['x_' + str(i) for i in range(self.n_states)]
-        self.input_names = ['u_' + str(i) for i in range(self.n_inputs)]
-        self.output_names = ['y_' + str(i) for i in range(self.n_outputs)]
+    @property
+    def state_names(self):
+        """Return state names."""
+        return ['x_' + str(i) for i in range(self.n_states)]
+
+    @property
+    def input_names(self):
+        """Return input names."""
+        return ['u_' + str(i) for i in range(self.n_inputs)]
+
+    @property
+    def output_names(self):
+        """Return output_names names."""
+        return ['y_' + str(i) for i in range(self.n_outputs)]
 
     @staticmethod
     def concatenate(list_of_vectors):
