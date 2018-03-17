@@ -10,27 +10,59 @@ class Equation:
             self,
             expression,   # Symbolic expression
             variables,    # List of symbolic vectors or scalars
-            parameters):  # List of symbolic parameters
+            parameters,    # List of symbolic parameters
+            reshape_vectors=True):  # True: Reshape vectors to (n,). False: Keep vectors as (n, 1) or (1, n)
         """Init and create lambdified function: f(q1, ..., qn, parameters)."""
         self.expression = expression
         self.variables = variables
         self.parameters = parameters
 
-        # Create the numeric lamdified function
-        self.lambdified = lambdify([*self.variables, self.parameters], self.expression)
+        # Convert to matrix type if necessary.
+        # This ensures the output has an explicit
+        # shape.
+        if type(self.expression) is not Matrix:
+            self.expression = Matrix([self.expression])
+
+        # Check whether we want to reshape vectors, and whether
+        # we are really dealing with a vector
+        if reshape_vectors and 1 in self.expression.shape:
+            self.reshape_as_vector = True
+            self.number_of_elements = len(self.expression)
+        else:
+            self.reshape_as_vector = False
+
+        # Lambified expression in ndarray form (privately accessible only)
+        self.__lambdified_matrix = lambdify([*self.variables, self.parameters], self.expression)
+
+        # Create the publicly accessible lambdified expression of the form:
+        # f(q1, ..., qn, parameters)
+        if self.reshape_as_vector:
+            # Apply the reshaping step if requested
+            self.lambdified = lambda *varargs: self.__lambdified_matrix(*varargs).reshape(self.number_of_elements,)
+        else:
+            # Otherwise, it is just what we already computed
+            self.lambdified = self.__lambdified_matrix
 
     def insert_parameters(self, parameter_values):
         """Create function f(q, ...) from f(q, ..., parameters) by inserting parameters."""
         # Obtain the numeric values in the same order as the symbols
         value_list = [parameter_values[symbol.name] for symbol in self.parameters]
-        # Insert the list of numeric values
-        self.function = lambda *variables: self.lambdified(*variables, value_list)
+
+        if self.reshape_as_vector:
+            # Insert the list of numeric values while ensuring ouput is an array
+            self.function = lambda *variables: \
+                self.__lambdified_matrix(*variables, value_list).reshape(self.number_of_elements,)
+        else:
+            # Insert the list of numeric values while leaving matrix dimensions unchanged
+            self.function = lambda *variables: \
+                self.__lambdified_matrix(*variables, value_list)
 
     def info(self):
         """Print the expression."""
         print("Expression: ", self.expression)
         print("Variables: ", self.variables)
         print("Parameters: ", self.parameters)
+        print("Expression is a matrix: ", self.is_matrix)
 
 
 def save_object(filename, data):
