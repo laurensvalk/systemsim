@@ -219,8 +219,8 @@ class HamiltonianMechanicalSystem(System):
 class IDAPBCMechanicalSystem(HamiltonianMechanicalSystem):
     """Hamiltonian mechanical system with IDA-PBC as state feedback.
 
-    This class is identical to HamiltonianMechanicalSystem, but the
-    state feedback law is not zero. Rather, it is generated using the
+    This class is similar to HamiltonianMechanicalSystem, but the
+    state feedback law now included. It is generated using the
     passivity-based control by damping and interconnection assignment.
 
     The output function now corresponds the output of the closed loop
@@ -244,6 +244,8 @@ class IDAPBCMechanicalSystem(HamiltonianMechanicalSystem):
             J2,
             Kv,
             Fp,
+            z,
+            Psi,
             q_initial=None,
             p_initial=None,
             exogenous_input_function=None):
@@ -256,6 +258,8 @@ class IDAPBCMechanicalSystem(HamiltonianMechanicalSystem):
         self.J2 = J2
         self.Kv = Kv
         self.Fp = Fp
+        self.z = z
+        self.Psi = Psi
 
         # Assert compatible dimensions
         zero = np.zeros(n)
@@ -265,6 +269,8 @@ class IDAPBCMechanicalSystem(HamiltonianMechanicalSystem):
         assert self.dHcl_dq(zero, zero).shape == (n,)
         assert self.dVcl_dq(zero).shape == (n,)
         assert self.Fp(zero).shape == (n-m, n)
+        assert self.z(zero).shape == (m,)
+        assert self.Psi(zero).shape == (n, m)
 
         self.matching_tolerance = 1e-3
 
@@ -276,6 +282,10 @@ class IDAPBCMechanicalSystem(HamiltonianMechanicalSystem):
         """Calculate IDA PBC feedback law."""
         # Extract coordinates and velocities from state
         q, p = self.get_coordinates(state)
+
+        # First, check that the matching conditions hold
+        kinetic, potential = self.matching(q, p)
+        assert max(np.linalg.norm(kinetic), np.linalg.norm(potential)) < self.matching_tolerance
 
         # Compute control law components
         F = self.F(q)
@@ -294,12 +304,33 @@ class IDAPBCMechanicalSystem(HamiltonianMechanicalSystem):
             F.T@(dH_dq - Mcl@np.linalg.solve(M, dHcl_dq) + J2@dHcl_dp)
         ) - Kv@ycl
 
-        # Before returning, check that the matching conditions hold
-        kinetic, potential = self.matching(q, p)
-
-        assert max(np.linalg.norm(kinetic), np.linalg.norm(potential)) < self.matching_tolerance
-
         return tau
+
+    def total_input(self, external_control_input, exogenous_input, state_feedback, state, time):
+        """Compute total input to system.
+
+        Unlike the default case, the distributed control input enters
+        through a state dependent (matched) input matrix.
+        """
+        # Extract coordinates and velocities from state
+        q, p = self.get_coordinates(state)
+
+        # Compute control law components
+        F = self.F(q)
+        M = self.M(q)
+        Psi = self.Psi(q)
+        Mcl = self.Mcl(q)
+
+        # Compute effect of distributed control input
+        external_control_input_matched = -np.linalg.solve(
+            F.T@F,
+            F.T@Mcl@np.linalg.solve(
+                M,
+                Psi@external_control_input
+            )
+        )
+        # Return total control signal.
+        return exogenous_input + state_feedback + external_control_input_matched
 
     def matching(self, q, p):
         """Verify that the matching conditions hold."""
@@ -373,6 +404,8 @@ class SymbolicIDAPBCMechanicalSystem(IDAPBCMechanicalSystem):
             model['J2'].function,
             model['Kv'].function,
             model['Fp'].function,
+            model['z'].function,
+            model['Psi'].function,
             q_initial,
             p_initial,
             exogenous_input_function)
