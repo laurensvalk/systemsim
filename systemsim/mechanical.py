@@ -105,10 +105,10 @@ class HamiltonianMechanicalSystem(System):
             m,
             M,
             F,
-            dHdq,
-            dHdp,
             V,
             R,
+            dH_dq,
+            dV_dq,
             q_initial=None,
             p_initial=None,
             exogenous_input_function=None):
@@ -131,8 +131,8 @@ class HamiltonianMechanicalSystem(System):
         # Store system generators
         self.M = M
         self.F = F
-        self.dHdq = dHdq
-        self.dHdp = dHdp
+        self.dH_dq = dH_dq
+        self.dV_dq = dV_dq
         self.V = V
         self.R = R
 
@@ -140,7 +140,7 @@ class HamiltonianMechanicalSystem(System):
         assert self.M(q_initial).shape == (self.n, self.n)
         assert self.F(q_initial).shape == (self.n, self.m)
         assert self.R(q_initial, p_initial).shape == (self.n, self.n)
-        assert self.dHdq(q_initial, p_initial).shape == self.dHdp(q_initial, p_initial).shape == (self.n,)
+        assert self.dH_dq(q_initial, p_initial).shape == self.dV_dq(q_initial).shape == (self.n,)
 
         # Initialize system object
         System.__init__(self, n_states, n_inputs, n_outputs,
@@ -170,11 +170,15 @@ class HamiltonianMechanicalSystem(System):
     def output(self, state, time=None):
         """Return mechanical system Output."""
         q, p = self.get_coordinates(state)
-        return self.F(q).T@self.dHdp(q, p)
+        return self.F(q).T@self.dH_dp(q, p)
 
     def state_feedback(self, state, time=None):
         """Return internal mechanical system feedback."""
         return self.zero_input
+
+    def dH_dp(self, q, p):
+        """Compute dH/dp as M_inverse*p."""
+        return np.linalg.solve(self.M(q), p)
 
     def equations_of_motion(self, state, tau, time=None):
         """Evaluate equations of motion for mechanical system."""
@@ -185,9 +189,9 @@ class HamiltonianMechanicalSystem(System):
         tau = tau.reshape((self.m, ))
 
         # Hamiltonian gradient
-        dHdq = self.dHdq(q, p)
-        dHdp = self.dHdp(q, p)
-        dHdx = np.append(dHdq, dHdp)
+        dH_dq = self.dH_dq(q, p)
+        dH_dp = self.dH_dp(q, p)
+        dHdx = np.append(dH_dq, dH_dp)
 
         # Input and damping matrices
         F = self.F(q)
@@ -210,3 +214,165 @@ class HamiltonianMechanicalSystem(System):
         x_dot = J_matrix@dHdx + input_matrix@tau
 
         return x_dot
+
+
+class IDAPBCMechanicalSystem(HamiltonianMechanicalSystem):
+    """Hamiltonian mechanical system with IDA-PBC as state feedback.
+
+    This class is identical to HamiltonianMechanicalSystem, but the
+    state feedback law is not zero. Rather, it is generated using the
+    passivity-based control by damping and interconnection assignment.
+
+    The output function now corresponds the output of the closed loop
+    Hamiltonian.
+    """
+
+    def __init__(
+            self,
+            n,
+            m,
+            M,
+            F,
+            V,
+            R,
+            dH_dq,
+            dV_dq,
+            Mcl,
+            Vcl,
+            dHcl_dq,
+            dVcl_dq,
+            J2,
+            Kv,
+            Fp,
+            q_initial=None,
+            p_initial=None,
+            exogenous_input_function=None):
+        """Initialize the IDA Hamiltonian mechanical system."""
+        # Store system generators
+        self.Mcl = Mcl
+        self.Vcl = Vcl
+        self.dHcl_dq = dHcl_dq
+        self.dVcl_dq = dVcl_dq
+        self.J2 = J2
+        self.Kv = Kv
+        self.Fp = Fp
+
+        # Assert compatible dimensions
+        zero = np.zeros(n)
+        assert self.Mcl(zero).shape == (n, n)
+        assert self.J2(zero, zero).shape == (n, n)
+        assert self.Kv().shape == (m, m)
+        assert self.dHcl_dq(zero, zero).shape == (n,)
+        assert self.dVcl_dq(zero).shape == (n,)
+        assert self.Fp(zero).shape == (n-m, n)
+
+        self.matching_tolerance = 1e-3
+
+        # Pass on the remaining arguments to the Hamiltonian system
+        HamiltonianMechanicalSystem.__init__(self, n, m, M, F, V, R, dH_dq, dV_dq,
+                                             q_initial, p_initial, exogenous_input_function)
+
+    def state_feedback(self, state, time):
+        """Calculate IDA PBC feedback law."""
+        # Extract coordinates and velocities from state
+        q, p = self.get_coordinates(state)
+
+        # Compute control law components
+        F = self.F(q)
+        M = self.M(q)
+        J2 = self.J2(q, p)
+        Kv = self.Kv()
+        Mcl = self.Mcl(q)
+        dH_dq = self.dH_dq(q, p)
+        dHcl_dq = self.dHcl_dq(q, p)
+        dHcl_dp = self.dHcl_dp(q, p)
+        ycl = self.output(state)
+
+        # Compute the IDA PBC law
+        tau = np.linalg.solve(
+            F.T@F,
+            F.T@(dH_dq - Mcl@np.linalg.solve(M, dHcl_dq) + J2@dHcl_dp)
+        ) - Kv@ycl
+
+        # Before returning, check that the matching conditions hold
+        kinetic, potential = self.matching(q, p)
+
+        assert max(np.linalg.norm(kinetic), np.linalg.norm(potential)) < self.matching_tolerance
+
+        return tau
+
+    def matching(self, q, p):
+        """Verify that the matching conditions hold."""
+        # Evaluate terms in the matching condition
+        dV_dq = self.dV_dq(q)
+        dH_dq = self.dH_dq(q, p)
+        dVcl_dq = self.dVcl_dq(q)
+        dHcl_dq = self.dHcl_dq(q, p)
+        dHcl_dp = self.dHcl_dp(q, p)
+        M = self.M(q)
+        J2 = self.J2(q, p)
+        Mcl = self.Mcl(q)
+        Fp = self.Fp(q)
+        dpMinvp_dq = 2*(dH_dq - dV_dq)
+        dpMclinvp_dq = 2*(dHcl_dq - dVcl_dq)
+
+        # Kinetic energy matching equation
+        kinetic = Fp@(
+            dpMinvp_dq - Mcl@np.linalg.solve(M, dpMclinvp_dq) + 2*J2@dHcl_dp
+        )
+
+        # Potential energy mathing equation
+        potential = Fp@(
+            dV_dq - Mcl@np.linalg.solve(M, dVcl_dq)
+        )
+
+        # Return the matching values
+        return kinetic, potential
+
+    def output(self, state, time=None):
+        """Return controlled Hamiltonian output."""
+        q, p = self.get_coordinates(state)
+        return self.F(q).T@self.dHcl_dp(q, p)
+
+    def dHcl_dp(self, q, p):
+        """Compute dHcl/dp as Mcl_inverse*p."""
+        return np.linalg.solve(self.Mcl(q), p)
+
+
+class SymbolicIDAPBCMechanicalSystem(IDAPBCMechanicalSystem):
+    """Like IDAPBCMechanicalSystem, but with symbolic arguments."""
+
+    def __init__(
+            self,
+            model,
+            parameters,
+            q_initial=None,
+            p_initial=None,
+            exogenous_input_function=None):
+        """Initialize the IDA Hamiltonian using symbolic definitions."""
+        # Substitute parameters into model equations
+        for (name, equation) in model.items():
+            equation.insert_parameters(parameters)
+
+        # Take the numeric functions from the model to
+        # initialize IDA PBC Hamiltonian system
+        IDAPBCMechanicalSystem.__init__(
+            self,
+            model['M'].expression.shape[0],
+            model['F'].expression.shape[1],
+            model['M'].function,
+            model['F'].function,
+            model['V'].function,
+            model['R'].function,
+            model['dH_dq'].function,
+            model['dV_dq'].function,
+            model['Mcl'].function,
+            model['Vcl'].function,
+            model['dHcl_dq'].function,
+            model['dVcl_dq'].function,
+            model['J2'].function,
+            model['Kv'].function,
+            model['Fp'].function,
+            q_initial,
+            p_initial,
+            exogenous_input_function)
