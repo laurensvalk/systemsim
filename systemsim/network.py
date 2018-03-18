@@ -16,52 +16,52 @@ class Collection(System):
     def __init__(
             self,
             systems,
-            exogenous_input_functions=None,
-            exogenous_output_functions=None):
+            input_signals=[],
+            output_signals=[]):
         """Initialize network."""
         # Store systems with names
         self.systems = systems
 
         # Initial state of the whole network
-        x_initial = self.__as_state_vector({i: s.x_initial for (i, s) in self.systems.items()})
-        n_states = sum([s.n_states for (i, s) in self.systems.items()])
-        assert n_states == x_initial.shape[self.ROW]
+        x_dimensions = [s.n_states for s in self.systems]
+        n_states = sum(x_dimensions)
 
-        # Dimensions for converting between dictionaries and stacked state arrays
-        x_dimensions = {i: s.n_states for (i, s) in self.systems.items()}
-        self.x_cut_index = np.cumsum([x_dimensions[i] for i in self.system_names])[0:-1]
+        # Initial state of the whole network as a concatation of states
+        x_initial = self.concatenate([s.x_initial for s in self.systems])
+        # To do the reverse (de-concatenate), we need to remember where to split
+        self.x_cut_index = np.cumsum(x_dimensions)[0:-1]
 
-        # Store on which systems the external inputs act
-        self.input_connections = input_connections if input_connections is not None else {}
-        # For each of the signals, find out the dimension by checking the dimension of the systems on which they act
-        input_dimensions = {signal: systems[acts_on[0]].n_inputs for (signal, acts_on) in self.input_connections.items()}
-        # Sum of all input dimensions
-        n_inputs = sum([dimension for (signal, dimension) in input_dimensions.items()])
+        # Store the input and output signal generators
+        self.input_signals = input_signals
+        self.output_signals = output_signals
 
-        # Create a fixed alphabetical list of external inputs
-        self.exogenous_input_signal_names = list(self.input_connections.keys())
-        # When a vector of external inputs is supplied, this is how we can split them up in individual signals
-        self.u_cut_index = np.cumsum([input_dimensions[signal] for signal in self.exogenous_input_signal_names])[0:-1]
-
-        # Store the external input generators, if supplied
-        self.exogenous_input_functions = exogenous_input_functions if exogenous_input_functions is not None else {}
-
-        # If no input generator was supplied for some signal, then set it to zero
-        for signal in self.exogenous_input_signal_names:
-            if signal not in self.exogenous_input_functions:
-                self.exogenous_input_functions[signal] = lambda time: np.zeros(input_dimensions[signal])
-
-        # The resulting vector of external signals acting on the network
+        # Each signal has been specified to act onto certain plants
+        # Here we verify that they are of compatible size, and set
+        # some signals to zero if they are not explicitly given.
+        input_dimensions = []
+        input_generators = []
+        self.plants_acted_on_per_signal = []
+        for (plants_acted_on, generator) in self.input_signals:
+            # Keep a list on which plant each signal acts
+            self.plants_acted_on_per_signal.append(plants_acted_on)
+            # Use (arbitrarily) the first plant to check the input size
+            plant0 = plants_acted_on[0]
+            # Check that the signal acts on compatible plants
+            assert all(plant.n_inputs == plant0.n_inputs for plant in plants_acted_on)
+            # Append the result to the list of input dimensions
+            input_dimensions.append(plant0.n_inputs)
+            # Make explicit any signal that was not specified
+            if generator is None:
+                generator = lambda time: plant0.zero_input
+            input_generators.append(generator)
+        # Also create a stacked input generator of all inputs
         exogenous_input_function = lambda time: \
-            self.concatenate([self.exogenous_input_functions[signal](time)
-                              for signal in self.exogenous_input_signal_names])
+            self.concatenate([signal(time) for signal in input_generators])
 
-        # TODO remove this temporary depencency; just for getting output size..abs
-        self.exogenous_input = exogenous_input_function
-
-        # Store output generators and how they are determined
-        self.exogenous_output_functions = exogenous_output_functions if exogenous_output_functions is not None else {}
-        self.exogenous_output_names = list(self.exogenous_output_functions.keys())
+        # When a vector of external inputs is supplied, this is where we can split it
+        # up into the individual signals
+        n_inputs = sum(input_dimensions)
+        self.u_cut_index = np.cumsum(input_dimensions)[0:-1]
 
         # Number of outputs: Size of output evaluated at time 0
         n_outputs = len(self.output(x_initial, time=0))
@@ -69,39 +69,33 @@ class Collection(System):
         # Initialize System object
         System.__init__(self, n_states, n_inputs, n_outputs, x_initial, exogenous_input_function)
 
-        # TODO: THIS STILL DOES NOT CORRECTLY TAKE exo in into account.
-
     def __as_state_per_system(self, network_state_vector):
-        """Convert a stacked vector of states back into a dictionary of states per system."""
-        # As intermediate step, cut state vector into list of state vectors
-        state_list = np.split(network_state_vector, self.x_cut_index)
-        # Return the dictionary of states
-        return {system_name: state_list[listindex] for listindex, system_name in enumerate(self.system_names)}
-
-    def __as_state_vector(self, state):
-        """Convert a dictionary with states into a large stacked vector."""
-        return self.concatenate([state[i] for i in self.system_names])
+        """Cut state vector into list of state vectors."""
+        return np.split(network_state_vector, self.x_cut_index)
 
     def __as_input_per_signal(self, input_vector):
-        """Convert a stacked vector of inputs back into a dictionary of input per signal."""
-        # As intermediate step, cut input vector into list of inputs
-        input_list = np.split(input_vector, self.u_cut_index)
-        # Return the dictionary of inputs
-        return {signal: input_list[listindex] for listindex, signal in enumerate(self.exogenous_input_signal_names)}
+        """Cut input vector of list of inputs."""
+        return np.split(input_vector, self.u_cut_index)
 
-    def __output_per_system(self, x, time):
+    def __output_per_system(self, state_per_system, time):
         """Return the outputs of each system, given their states."""
-        return {i: s.output(x[i], time) for (i, s) in self.systems.items()}
+        return [s.output(state_per_system[i], time) for (i, s) in enumerate(self.systems)]
 
     def output(self, state_vector, time):
         """Vector output when viewing this whole network as one big system."""
+        # Work out the output of each plant separately
         state_per_system = self.__as_state_per_system(state_vector)
-        exogenous_input_vector = self.exogenous_input(time)
-        input_per_signal = self.__as_input_per_signal(exogenous_input_vector)
         output_per_system = self.__output_per_system(state_per_system, time)
-        exogenous_output_per_signal = {signal: function(output_per_system, input_per_signal)
-                                       for (signal, function) in self.exogenous_output_functions.items()}
-        return self.concatenate([exogenous_output_per_signal[signal_name] for signal_name in self.exogenous_output_names])
+        # Each signal in the total output is a linear combination of plant outputs
+        # For each signal we make this linear sum as follows
+        output_per_signal = []
+        for weighted_plant in self.output_signals:
+            signal = sum([
+                weight*output_per_system[self.systems.index(plant)] for (plant, weight) in weighted_plant.items()
+            ])
+            output_per_signal.append(signal)
+        # We return the result as a vector
+        return self.concatenate(output_per_signal)
 
     def distributed_law(self, x, y, time):
         """Return the distributed control input for each system.
@@ -109,9 +103,7 @@ class Collection(System):
         There is no interaction by default; other interactions may be
         specified by overriding this one in the inherited class.
         """
-        return {
-            i: s.zero_input for (i, s) in self.systems.items()
-        }
+        return [s.zero_input for s in self.systems]
 
     def equations_of_motion(self, state_vector, external_input_vector, time):
         """Evaluate equations of motion.
@@ -122,33 +114,38 @@ class Collection(System):
         # Convert network state array into states per system
         state_per_system = self.__as_state_per_system(state_vector)
         # Output for each system, given current state
-        y_per_system = self.__output_per_system(state_per_system, time)
+        output_per_system = self.__output_per_system(state_per_system, time)
         # Evaluate distributed control law, given current states and outputs
-        distributed_input_per_system = self.distributed_law(state_per_system, y_per_system, time)
+        distributed_input_per_system = self.distributed_law(state_per_system, output_per_system, time)
 
         # Convert input array into the different exogenous inputs
         external_input_per_signal = self.__as_input_per_signal(external_input_vector)
 
-        # For each signal, add the external input it to the system upon which its acts
+        # For each system, compute the distributed input from the connection/network, if present
         total_input_per_system = distributed_input_per_system
-        for signal_name, systems_acted_on in self.input_connections.items():
-            for system_acted_on in systems_acted_on:
-                total_input_per_system[system_acted_on] = \
-                    total_input_per_system[system_acted_on] + external_input_per_signal[signal_name]
+
+        # For each signal, add the external input to the systems upon which its acts
+        for (signal_index, (plants_acted_on, generator)) in enumerate(self.input_signals):
+            for plant_acted_on in plants_acted_on:
+                plant_index = self.systems.index(plant_acted_on)
+                total_input_per_system[plant_index] += external_input_per_signal[signal_index]
 
         # Obtain state change for the whole network, by taking the state
         # change for each systen
-        state_change_per_system = {
-            i: s.state_change(state_per_system[i], total_input_per_system[i], time) for (i, s) in self.systems.items()
-        }
+        state_change_per_system = [
+            s.state_change(
+                state_per_system[i],
+                total_input_per_system[i],
+                time) for (i, s) in enumerate(self.systems)
+        ]
 
         # Return state change in vector form
-        return self.__as_state_vector(state_change_per_system)
+        return self.concatenate(state_change_per_system)
 
     def post_simulation_processing(self):
         """Store network simulation for all subsystems."""
         state_trajectory_per_system = self.__as_state_per_system(self.state_trajectory)
-        for (i, s) in self.systems.items():
+        for (i, s) in enumerate(self.systems):
             s.state_trajectory = state_trajectory_per_system[i]
             s.simulation_time = self.simulation_time
             s.compute_output_trajectory()
@@ -160,23 +157,27 @@ class Interconnection(Collection):
     def __init__(
             self,
             systems,
-            system_connections,
+            connections,
             exogenous_input_functions=None,
             exogenous_output_functions=None):
         """Initialize network."""
-        # Store leader settings
-        self.weights = {
-            edge: weight for (edge, weight) in system_connections.items()
-        }
+        # Store system connections
+        self.connections = connections
+        # Create neighbor set for each system, given the edges
+        self.neighbors = [
+            [j for j in self.systems if (j, i) in self.connections] for i in self.systems
+        ]
 
         # Initialize System object
         Interconnection.__init__(self, systems, exogenous_input_functions, exogenous_output_functions)
 
     def distributed_law(self, x, y, time):
         """Return the distributed control input for each system due to its input/output connections."""
-        return {
-            i: sum([self.weights[(j, i)]*y[j] for j in self.neighbor_names[i]]) for (i, s) in self.systems.items()
-        }
+        return [
+            sum([
+                self.connections[(j, i)]*y[j_id] for (j_id, j) in enumerate(self.neighbors[i_id])
+            ]) for (i_id, i) in enumerate(self.systems)
+        ]
 
 
 class DistributedSystem(Collection):
@@ -190,24 +191,20 @@ class DistributedSystem(Collection):
             exogenous_input_functions=None,
             exogenous_output_functions=None):
         """Initialize network."""
-        # Extract list of edge tuples
-        self.edges = list(system_connections.keys())
-
+        # Store list of edges
+        self.weighted_edges = weighted_edges
         # Store interconnection information
         self.weights = {
-            edge: weight for (edge, (weight, relative_distance)) in system_connections.items()
+            edge: weight for (edge, (weight, relative_distance)) in weighted_edges.items()
         }
-
         # Store interconnection information
         self.relative_distances = {
-            edge: relative_distance for (edge, (weight, relative_distance)) in system_connections.items()
+            edge: relative_distance for (edge, (weight, relative_distance)) in weighted_edges.items()
         }
-
         # Create neighbor set for each system, given the edges
-        self.neighbor_names = {
-            i: [j for j in self.system_names if (j, i) in self.edges] for i in self.system_names
-        }
-
+        self.neighbors = [
+            [j for j in self.systems if (j, i) in self.weighted_edges] for i in self.systems
+        ]
         # Store leader settings
         self.leaders = leaders
 
@@ -216,9 +213,11 @@ class DistributedSystem(Collection):
 
     def distributed_law(self, x, y, time):
         """Evaluate the same control law for each agent."""
-        return {
-            i: sum([self.weights[(j, i)]*(y[j]-y[i]) for j in self.neighbor_names[i]]) for (i, s) in self.systems.items()
-        }
+        return [
+            sum([
+                self.weights[(j, i)]*(y[j_id]-y[i_id]) for (j_id, j) in enumerate(self.neighbors[i_id])
+            ]) for (i_id, i) in enumerate(self.systems)
+        ]
 
     @staticmethod
     def undirected_edges(weighted_edges):
@@ -250,23 +249,21 @@ class DistributedMechanicalSystem(DistributedSystem):
     def distributed_law(self, x, y, time):
         """Evaluate the same control law for each agent."""
         # Coordinates for all agents
-        q = {i: s.get_coordinates(x[i])[0] for (i, s) in self.systems.items()}
+        q = [s.get_coordinates(x[i])[0] for (i, s) in enumerate(self.systems)]
 
         # Exchangable coordinates
         z = self.coordinated_positions(q)
 
         # For each system, give distributed weighted inputs, given its neighbors
-        u = {
-            i: sum(
-                [
-                    self.weights[(i, j)]*(z[i]-z[j]+self.relative_distances[(i, j)]) for j in self.neighbor_names[i]
-                ]
-            )
-            for (i, s) in self.systems.items()
-        }
+        u = [
+            sum([
+                self.weights[(i, j)]*(z[i_id]-z[j_id]+self.relative_distances[(i, j)]) for (j_id, j) in enumerate(self.neighbors[i_id])
+            ]) for (i_id, i) in enumerate(self.systems)
+        ]
 
         # Add leader forces
         for (leader, (gain, target)) in self.leaders.items():
-            u[leader] = u[leader] + gain*(z[leader]-target)
+            index = self.systems.index(leader)
+            u[index] = u[index] + gain*(z[index]-target)
 
         return u
