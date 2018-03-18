@@ -158,18 +158,18 @@ class Interconnection(Collection):
             self,
             systems,
             connections,
-            exogenous_input_functions=None,
-            exogenous_output_functions=None):
+            input_functions=None,
+            output_functions=None):
         """Initialize network."""
+        # Initialize System object
+        Collection.__init__(self, systems, input_functions, output_functions)
+
         # Store system connections
         self.connections = connections
         # Create neighbor set for each system, given the edges
         self.neighbors = [
             [j for j in self.systems if (j, i) in self.connections] for i in self.systems
         ]
-
-        # Initialize System object
-        Interconnection.__init__(self, systems, exogenous_input_functions, exogenous_output_functions)
 
     def distributed_law(self, x, y, time):
         """Return the distributed control input for each system due to its input/output connections."""
@@ -188,8 +188,8 @@ class DistributedSystem(Collection):
             systems,
             weighted_edges,
             leaders={},
-            exogenous_input_functions=None,
-            exogenous_output_functions=None):
+            input_functions=None,
+            output_functions=None):
         """Initialize network."""
         # Store list of edges
         self.weighted_edges = weighted_edges
@@ -209,7 +209,7 @@ class DistributedSystem(Collection):
         self.leaders = leaders
 
         # Initialize System object
-        Interconnection.__init__(self, systems, exogenous_input_functions, exogenous_output_functions)
+        Collection.__init__(self, systems, input_functions, output_functions)
 
     def distributed_law(self, x, y, time):
         """Evaluate the same control law for each agent."""
