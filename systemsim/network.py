@@ -14,7 +14,8 @@ class Interconnection(System):
             system_connections,
             input_connections=None,
             exogenous_input_functions=None,
-            exogenous_output_functions=None):
+            exogenous_output_functions=None,
+            leaders={}):
         """Initialize network."""
         # Store systems with names
         self.systems = systems
@@ -26,10 +27,22 @@ class Interconnection(System):
         assert len(self.system_names) == len(set(self.system_names)), \
             "System names must be unique."
 
-        # Store interconnection information
-        self.weights = system_connections
         # Extract list of edge tuples
         self.edges = list(system_connections.keys())
+
+        # Store interconnection information
+        self.weights = {
+            edge: weight for (edge, (weight, relative_distance)) in system_connections.items()
+        }
+
+        # Store interconnection information
+        self.relative_distances = {
+            edge: relative_distance for (edge, (weight, relative_distance)) in system_connections.items()
+        }
+
+        # Compute leader settings
+        self.leaders = leaders
+
         # Create neighbor set for each system, given the edges
         self.neighbor_names = {
             i: [j for j in self.system_names if (j, i) in self.edges] for i in self.system_names
@@ -165,11 +178,11 @@ class Interconnection(System):
         undirected_weighted_edges = deepcopy(weighted_edges)
 
         # For each edge in the supplied network, add complementary edge
-        for (tail, head), weight in weighted_edges.items():
+        for (tail, head), (weight, relative_distance) in weighted_edges.items():
             # Assert that the added edge isn't already in the network
             assert (head, tail) not in weighted_edges
             # Add the reversed edge
-            undirected_weighted_edges[(head, tail)] = weight
+            undirected_weighted_edges[(head, tail)] = (weight, -relative_distance)
 
         # Return the undirected network topology
         return undirected_weighted_edges
@@ -199,3 +212,38 @@ class DistributedSystem(Interconnection):
         neighbor output and the output of the agent.
         """
         return sum([self.weights[(j, me)]*(y[j]-y[me]) for j in self.neighbor_names[me]])
+
+
+class DistributedMechanicalSystem(Interconnection):
+    """Interconnection of systems with a common type of interaction."""
+
+    def coordinated_positions(self, q):
+        """Compute the generalized positions that are communicated over the network.
+
+        By default, this is the full position coordinate.
+        """
+        return q
+
+    def distributed_law(self, x, y, time):
+        """Evaluate the same control law for each agent."""
+        # Coordinates for all agents
+        q = {i: s.get_coordinates(x[i])[0] for (i, s) in self.systems.items()}
+
+        # Exchangable coordinates
+        z = self.coordinated_positions(q)
+
+        # For each system, give distributed weighted inputs, given its neighbors
+        u = {
+            i: sum(
+                [
+                    self.weights[(i, j)]*(z[i]-z[j]+self.relative_distances[(i, j)]) for j in self.neighbor_names[i]
+                ]
+            )
+            for (i, s) in self.systems.items()
+        }
+
+        # Add leader forces
+        for (leader, (gain, target)) in self.leaders.items():
+            u[leader] = u[leader] + gain*(z[leader]-target)
+
+        return u
