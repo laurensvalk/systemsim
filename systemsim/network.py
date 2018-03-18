@@ -31,17 +31,24 @@ class Interconnection(System):
         self.edges = list(system_connections.keys())
 
         # Store interconnection information
-        self.weights = {
-            edge: weight for (edge, (weight, relative_distance)) in system_connections.items()
-        }
+        try:
+            # For now, use try except for compatibility
+            # with code that does not specify relative distance. 
+            self.weights = {
+                edge: weight for (edge, (weight, relative_distance)) in system_connections.items()
+            }
 
-        # Store interconnection information
-        self.relative_distances = {
-            edge: relative_distance for (edge, (weight, relative_distance)) in system_connections.items()
-        }
+            # Store interconnection information
+            self.relative_distances = {
+                edge: relative_distance for (edge, (weight, relative_distance)) in system_connections.items()
+            }
 
-        # Compute leader settings
-        self.leaders = leaders
+            # Compute leader settings
+            self.leaders = leaders
+        except:
+            self.weights = {
+                edge: weight for (edge, weight) in system_connections.items()
+            }
 
         # Create neighbor set for each system, given the edges
         self.neighbor_names = {
