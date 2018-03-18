@@ -5,55 +5,22 @@ from .core import System
 from copy import deepcopy
 
 
-class Interconnection(System):
-    """Multiple systems connected through inputs and outputs."""
+class Collection(System):
+    """A collection of disconnected systems operating in the same environment.
+
+    This is in essence a simulation of several open-loop systems operating simultaneously.
+    While not very useful in this form, it forms the basis for several classes that
+    interconnect the systems to produce a desired feedback system or network interaction.
+    """
 
     def __init__(
             self,
             systems,
-            system_connections,
-            input_connections=None,
             exogenous_input_functions=None,
-            exogenous_output_functions=None,
-            leaders={}):
+            exogenous_output_functions=None):
         """Initialize network."""
         # Store systems with names
         self.systems = systems
-        # Extract names for easy reference, always in the same order
-        # when using this list
-        self.system_names = list(systems.keys())
-
-        # Name error checking
-        assert len(self.system_names) == len(set(self.system_names)), \
-            "System names must be unique."
-
-        # Extract list of edge tuples
-        self.edges = list(system_connections.keys())
-
-        # Store interconnection information
-        try:
-            # For now, use try except for compatibility
-            # with code that does not specify relative distance. 
-            self.weights = {
-                edge: weight for (edge, (weight, relative_distance)) in system_connections.items()
-            }
-
-            # Store interconnection information
-            self.relative_distances = {
-                edge: relative_distance for (edge, (weight, relative_distance)) in system_connections.items()
-            }
-
-            # Compute leader settings
-            self.leaders = leaders
-        except:
-            self.weights = {
-                edge: weight for (edge, weight) in system_connections.items()
-            }
-
-        # Create neighbor set for each system, given the edges
-        self.neighbor_names = {
-            i: [j for j in self.system_names if (j, i) in self.edges] for i in self.system_names
-        }
 
         # Initial state of the whole network
         x_initial = self.__as_state_vector({i: s.x_initial for (i, s) in self.systems.items()})
@@ -139,11 +106,11 @@ class Interconnection(System):
     def distributed_law(self, x, y, time):
         """Return the distributed control input for each system.
 
-        This is the default network interaction; other interactions may be
-        specified by overriding this one.
+        There is no interaction by default; other interactions may be
+        specified by overriding this one in the inherited class.
         """
         return {
-            i: sum([self.weights[(j, i)]*y[j] for j in self.neighbor_names[i]]) for (i, s) in self.systems.items()
+            i: s.zero_input for (i, s) in self.systems.items()
         }
 
     def equations_of_motion(self, state_vector, external_input_vector, time):
@@ -178,6 +145,81 @@ class Interconnection(System):
         # Return state change in vector form
         return self.__as_state_vector(state_change_per_system)
 
+    def post_simulation_processing(self):
+        """Store network simulation for all subsystems."""
+        state_trajectory_per_system = self.__as_state_per_system(self.state_trajectory)
+        for (i, s) in self.systems.items():
+            s.state_trajectory = state_trajectory_per_system[i]
+            s.simulation_time = self.simulation_time
+            s.compute_output_trajectory()
+
+
+class Interconnection(Collection):
+    """A collection of systems interacting through inputs and outputs."""
+
+    def __init__(
+            self,
+            systems,
+            system_connections,
+            exogenous_input_functions=None,
+            exogenous_output_functions=None):
+        """Initialize network."""
+        # Store leader settings
+        self.weights = {
+            edge: weight for (edge, weight) in system_connections.items()
+        }
+
+        # Initialize System object
+        Interconnection.__init__(self, systems, exogenous_input_functions, exogenous_output_functions)
+
+    def distributed_law(self, x, y, time):
+        """Return the distributed control input for each system due to its input/output connections."""
+        return {
+            i: sum([self.weights[(j, i)]*y[j] for j in self.neighbor_names[i]]) for (i, s) in self.systems.items()
+        }
+
+
+class DistributedSystem(Collection):
+    """A collection of systems interacting through information exchange."""
+
+    def __init__(
+            self,
+            systems,
+            weighted_edges,
+            leaders={},
+            exogenous_input_functions=None,
+            exogenous_output_functions=None):
+        """Initialize network."""
+        # Extract list of edge tuples
+        self.edges = list(system_connections.keys())
+
+        # Store interconnection information
+        self.weights = {
+            edge: weight for (edge, (weight, relative_distance)) in system_connections.items()
+        }
+
+        # Store interconnection information
+        self.relative_distances = {
+            edge: relative_distance for (edge, (weight, relative_distance)) in system_connections.items()
+        }
+
+        # Create neighbor set for each system, given the edges
+        self.neighbor_names = {
+            i: [j for j in self.system_names if (j, i) in self.edges] for i in self.system_names
+        }
+
+        # Store leader settings
+        self.leaders = leaders
+
+        # Initialize System object
+        Interconnection.__init__(self, systems, exogenous_input_functions, exogenous_output_functions)
+
+    def distributed_law(self, x, y, time):
+        """Evaluate the same control law for each agent."""
+        return {
+            i: sum([self.weights[(j, i)]*(y[j]-y[i]) for j in self.neighbor_names[i]]) for (i, s) in self.systems.items()
+        }
+
     @staticmethod
     def undirected_edges(weighted_edges):
         """Turn every edge into an undirected one."""
@@ -194,34 +236,8 @@ class Interconnection(System):
         # Return the undirected network topology
         return undirected_weighted_edges
 
-    def post_simulation_processing(self):
-        """Store network simulation for all subsystems."""
-        state_trajectory_per_system = self.__as_state_per_system(self.state_trajectory)
-        for (i, s) in self.systems.items():
-            s.state_trajectory = state_trajectory_per_system[i]
-            s.simulation_time = self.simulation_time
-            s.compute_output_trajectory()
 
-
-class DistributedSystem(Interconnection):
-    """Interconnection of systems with a common type of interaction."""
-
-    def distributed_law(self, x, y, time):
-        """Evaluate the same control law for each agent."""
-        return {
-            i: self.neighbor_interaction(i, x, y, time) for (i, s) in self.systems.items()
-        }
-
-    def neighbor_interaction(self, me, x, y, time):
-        """Additional control input for the current agent, given its neighbors.
-
-        By default, we use the weighted sum of the difference between the
-        neighbor output and the output of the agent.
-        """
-        return sum([self.weights[(j, me)]*(y[j]-y[me]) for j in self.neighbor_names[me]])
-
-
-class DistributedMechanicalSystem(Interconnection):
+class DistributedMechanicalSystem(DistributedSystem):
     """Interconnection of systems with a common type of interaction."""
 
     def coordinated_positions(self, q):
