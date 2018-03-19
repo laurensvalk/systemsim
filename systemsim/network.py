@@ -2,7 +2,6 @@
 
 import numpy as np
 from .core import System
-from copy import deepcopy
 
 
 class Collection(System):
@@ -158,8 +157,8 @@ class Interconnection(Collection):
             self,
             systems,
             connections,
-            input_functions=None,
-            output_functions=None):
+            input_functions=[],
+            output_functions=[]):
         """Initialize network."""
         # Initialize System object
         Collection.__init__(self, systems, input_functions, output_functions)
@@ -167,16 +166,16 @@ class Interconnection(Collection):
         # Store system connections
         self.connections = connections
         # Create neighbor set for each system, given the edges
-        self.neighbors = [
-            [j for j in self.systems if (j, i) in self.connections] for i in self.systems
-        ]
+        self.neighbors = {
+            i: [j for j in self.systems if (j, i) in self.connections] for i in self.systems
+        }
 
     def distributed_law(self, x, y, time):
         """Return the distributed control input for each system due to its input/output connections."""
         return [
             sum([
-                self.connections[(j, i)]*y[j_id] for (j_id, j) in enumerate(self.neighbors[i_id])
-            ]) for (i_id, i) in enumerate(self.systems)
+                self.connections[(j, i)]*y[self.systems.index(j)] for j in self.neighbors[i]
+            ]) for i in self.systems
         ]
 
 
@@ -188,9 +187,11 @@ class DistributedSystem(Collection):
             systems,
             weighted_edges,
             leaders={},
-            input_functions=None,
-            output_functions=None):
+            input_functions=[],
+            output_functions=[]):
         """Initialize network."""
+        # Initialize System object
+        Collection.__init__(self, systems, input_functions, output_functions)
         # Store list of edges
         self.weighted_edges = weighted_edges
         # Store interconnection information
@@ -202,34 +203,32 @@ class DistributedSystem(Collection):
             edge: relative_distance for (edge, (weight, relative_distance)) in weighted_edges.items()
         }
         # Create neighbor set for each system, given the edges
-        self.neighbors = [
-            [j for j in self.systems if (j, i) in self.weighted_edges] for i in self.systems
-        ]
+        self.neighbors = {
+            i: [j for j in self.systems if (j, i) in self.weighted_edges] for i in self.systems
+        }
         # Store leader settings
         self.leaders = leaders
-
-        # Initialize System object
-        Collection.__init__(self, systems, input_functions, output_functions)
 
     def distributed_law(self, x, y, time):
         """Evaluate the same control law for each agent."""
         return [
             sum([
-                self.weights[(j, i)]*(y[j_id]-y[i_id]) for (j_id, j) in enumerate(self.neighbors[i_id])
-            ]) for (i_id, i) in enumerate(self.systems)
+                self.weights[(j, i)]*(y[self.systems.index(j)]-y[self.systems.index(i)]) for j in self.neighbors[i]
+            ]) for i in self.systems
         ]
 
     @staticmethod
     def undirected_edges(weighted_edges):
         """Turn every edge into an undirected one."""
-        # Initialize new network topology as supplied
-        undirected_weighted_edges = deepcopy(weighted_edges)
+        # Initialize new network topology as empty
+        undirected_weighted_edges = {}
 
         # For each edge in the supplied network, add complementary edge
         for (tail, head), (weight, relative_distance) in weighted_edges.items():
-            # Assert that the added edge isn't already in the network
-            assert (head, tail) not in weighted_edges
-            # Add the reversed edge
+            # Assert that the undirected edge isn't already in the network
+            assert not ((head, tail) in weighted_edges and (tail, head) in weighted_edges)
+            # Add the original and reversed edge in new topology
+            undirected_weighted_edges[(tail, head)] = (weight, relative_distance)
             undirected_weighted_edges[(head, tail)] = (weight, -relative_distance)
 
         # Return the undirected network topology
@@ -257,8 +256,8 @@ class DistributedMechanicalSystem(DistributedSystem):
         # For each system, give distributed weighted inputs, given its neighbors
         u = [
             sum([
-                self.weights[(i, j)]*(z[i_id]-z[j_id]+self.relative_distances[(i, j)]) for (j_id, j) in enumerate(self.neighbors[i_id])
-            ]) for (i_id, i) in enumerate(self.systems)
+                self.weights[(i, j)]*(z[self.systems.index(i)]-z[self.systems.index(j)]+self.relative_distances[(i, j)]) for j in self.neighbors[i]
+            ]) for i in self.systems
         ]
 
         # Add leader forces
