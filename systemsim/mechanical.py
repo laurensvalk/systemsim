@@ -272,8 +272,6 @@ class IDAPBCMechanicalSystem(HamiltonianMechanicalSystem):
         assert self.z(zero).shape == (m,)
         assert self.Psi(zero).shape == (n, m)
 
-        self.matching_tolerance = 1e-3
-
         # Pass on the remaining arguments to the Hamiltonian system
         HamiltonianMechanicalSystem.__init__(self, n, m, M, F, V, R, dH_dq, dV_dq,
                                              q_initial, p_initial, exogenous_input_function)
@@ -282,10 +280,6 @@ class IDAPBCMechanicalSystem(HamiltonianMechanicalSystem):
         """Calculate IDA PBC feedback law."""
         # Extract coordinates and velocities from state
         q, p = self.get_coordinates(state)
-
-        # First, check that the matching conditions hold
-        kinetic, potential = self.matching(q, p)
-        assert max(np.linalg.norm(kinetic), np.linalg.norm(potential)) < self.matching_tolerance
 
         # Compute control law components
         F = self.F(q)
@@ -357,7 +351,7 @@ class IDAPBCMechanicalSystem(HamiltonianMechanicalSystem):
             dV_dq - Mcl@np.linalg.solve(M, dVcl_dq)
         )
 
-        # Return the matching values
+        # Return the matching values (which should be zero)
         return kinetic, potential
 
     def output(self, state, time=None):
