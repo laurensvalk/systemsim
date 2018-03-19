@@ -20,6 +20,10 @@ class Collection(System):
         """Initialize network."""
         # Store systems with names
         self.systems = systems
+        # As well as an index lookup table
+        self.index = {
+            system: self.systems.index(system) for system in systems
+        }
 
         # Initial state of the whole network
         x_dimensions = [s.n_states for s in self.systems]
@@ -90,7 +94,7 @@ class Collection(System):
         output_per_signal = []
         for weighted_plant in self.output_signals:
             signal = sum([
-                weight*output_per_system[self.systems.index(plant)] for (plant, weight) in weighted_plant.items()
+                weight*output_per_system[self.index[plant]] for (plant, weight) in weighted_plant.items()
             ])
             output_per_signal.append(signal)
         # We return the result as a vector
@@ -126,7 +130,7 @@ class Collection(System):
         # For each signal, add the external input to the systems upon which its acts
         for (signal_index, (plants_acted_on, generator)) in enumerate(self.input_signals):
             for plant_acted_on in plants_acted_on:
-                plant_index = self.systems.index(plant_acted_on)
+                plant_index = self.index[plant_acted_on]
                 total_input_per_system[plant_index] += external_input_per_signal[signal_index]
 
         # Obtain state change for the whole network, by taking the state
@@ -174,7 +178,7 @@ class Interconnection(Collection):
         """Return the distributed control input for each system due to its input/output connections."""
         return [
             sum([
-                self.connections[(j, i)]*y[self.systems.index(j)] for j in self.neighbors[i]
+                self.connections[(j, i)]*y[self.index[j]] for j in self.neighbors[i]
             ]) for i in self.systems
         ]
 
@@ -213,7 +217,7 @@ class DistributedSystem(Collection):
         """Evaluate the same control law for each agent."""
         return [
             sum([
-                self.weights[(j, i)]*(y[self.systems.index(j)]-y[self.systems.index(i)]) for j in self.neighbors[i]
+                self.weights[(j, i)]*(y[self.index[j]]-y[self.index[i]]) for j in self.neighbors[i]
             ]) for i in self.systems
         ]
 
@@ -256,13 +260,13 @@ class DistributedMechanicalSystem(DistributedSystem):
         # For each system, give distributed weighted inputs, given its neighbors
         u = [
             sum([
-                self.weights[(i, j)]*(z[self.systems.index(i)]-z[self.systems.index(j)]+self.relative_distances[(i, j)]) for j in self.neighbors[i]
+                self.weights[(i, j)]*(z[self.index[i]]-z[self.index[j]]+self.relative_distances[(i, j)]) for j in self.neighbors[i]
             ]) for i in self.systems
         ]
 
         # Add leader forces
         for (leader, (gain, target)) in self.leaders.items():
-            index = self.systems.index(leader)
+            index = self.index[leader]
             u[index] = u[index] + gain*(z[index]-target)
 
         return u
