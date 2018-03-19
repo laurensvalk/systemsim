@@ -65,6 +65,7 @@ class Collection(System):
         # up into the individual signals
         n_inputs = sum(input_dimensions)
         self.u_cut_index = np.cumsum(input_dimensions)[0:-1]
+        self.zero_input_per_system = list([s.zero_input for s in systems])
 
         # Number of outputs: Size of output evaluated at time 0
         n_outputs = len(self.output(x_initial, time=0))
@@ -176,11 +177,17 @@ class Interconnection(Collection):
 
     def distributed_law(self, x, y, time):
         """Return the distributed control input for each system due to its input/output connections."""
-        return [
-            sum([
-                self.connections[(j, i)]*y[self.index[j]] for j in self.neighbors[i]
-            ]) for i in self.systems
-        ]
+        # Begin with zero input for all systems
+        u = list(self.zero_input_per_system)
+        # Loop over all the systems in the network:
+        for i in self.systems:
+            # Check if this system has any incoming signals from neighbors:
+            if self.neighbors[i]:
+                # If so, let the input be the weighted sum of the output of the neighbors
+                u[self.index[i]] = sum([
+                    self.connections[(j, i)]*y[self.index[j]] for j in self.neighbors[i]
+                ])
+        return u
 
 
 class DistributedSystem(Collection):
@@ -189,7 +196,7 @@ class DistributedSystem(Collection):
     def __init__(
             self,
             systems,
-            weighted_edges,
+            weighted_edges={},
             leaders={},
             input_functions=[],
             output_functions=[]):
@@ -214,12 +221,19 @@ class DistributedSystem(Collection):
         self.leaders = leaders
 
     def distributed_law(self, x, y, time):
-        """Evaluate the same control law for each agent."""
-        return [
-            sum([
-                self.weights[(j, i)]*(y[self.index[j]]-y[self.index[i]]) for j in self.neighbors[i]
-            ]) for i in self.systems
-        ]
+        """Evaluate the distributed control law for each agent."""
+        # Begin with zero input for all systems
+        u = list(self.zero_input_per_system)
+        # Loop over all the systems in the network:
+        for i in self.systems:
+            # Check if this system has any incoming signals from neighbors:
+            if self.neighbors[i]:
+                # If so, let the input be the weighted sum of the difference between
+                # the output of the neighbors and the output of the current system
+                u[self.index[i]] = sum([
+                    self.weights[(j, i)]*(y[self.index[j]]-y[self.index[i]]) for j in self.neighbors[i]
+                ])
+        return u
 
     @staticmethod
     def undirected_edges(weighted_edges):
@@ -252,21 +266,28 @@ class DistributedMechanicalSystem(DistributedSystem):
     def distributed_law(self, x, y, time):
         """Evaluate the same control law for each agent."""
         # Coordinates for all agents
-        q = [s.get_coordinates(x[i])[0] for (i, s) in enumerate(self.systems)]
-
+        q = [s.get_coordinates(x[idx])[0] for (idx, s) in enumerate(self.systems)]
         # Exchangable coordinates
         z = self.coordinated_positions(q)
+        # Begin with zero input for all systems
+        u = list(self.zero_input_per_system)
 
-        # For each system, give distributed weighted inputs, given its neighbors
-        u = [
-            sum([
-                self.weights[(i, j)]*(z[self.index[i]]-z[self.index[j]]+self.relative_distances[(i, j)]) for j in self.neighbors[i]
-            ]) for i in self.systems
-        ]
-
-        # Add leader forces
-        for (leader, (gain, target)) in self.leaders.items():
-            index = self.index[leader]
-            u[index] = u[index] + gain*(z[index]-target)
-
+        # Loop over all the systems in the network:
+        for i in self.systems:
+            # Numeric system index
+            idx = self.index[i]
+            # Check if this system has any incoming signals from neighbors:
+            if self.neighbors[i]:
+                # If so, let the input be the weighted sum of the difference between
+                # the output of the neighbors and the output of the current system
+                for j in self.neighbors[i]:
+                    # Numeric neighbor system index
+                    jdx = self.index[j]
+                    # Add the weighted contribution for neighbor j
+                    u[idx] = u[idx] + self.weights[(i, j)]*(z[idx]-z[jdx]+self.relative_distances[(i, j)])
+            # Check if this system is a leader
+            if i in self.leaders:
+                # If so, add the leader contrl input
+                gain, target = self.leaders[i]
+                u[idx] = u[idx] + gain*(z[idx]-target)
         return u
