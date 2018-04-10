@@ -316,7 +316,7 @@ class IDAPBCMechanicalSystem(HamiltonianMechanicalSystem):
         Mcl = self.Mcl(q)
 
         # Compute effect of distributed control input
-        external_control_input_matched = -np.linalg.solve(
+        external_control_input_matched = np.linalg.solve(
             F.T@F,
             F.T@Mcl@np.linalg.solve(
                 M,

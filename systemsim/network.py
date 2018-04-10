@@ -284,10 +284,10 @@ class DistributedMechanicalSystem(DistributedSystem):
                     # Numeric neighbor system index
                     jdx = self.index[j]
                     # Add the weighted contribution for neighbor j
-                    u[idx] = u[idx] + self.weights[(i, j)]*(z[idx]-z[jdx]+self.relative_distances[(i, j)])
+                    u[idx] = u[idx] + self.weights[(i, j)]*(z[jdx]-z[idx]-self.relative_distances[(i, j)])
             # Check if this system is a leader
             if i in self.leaders:
                 # If so, add the leader contrl input
                 gain, target = self.leaders[i]
-                u[idx] = u[idx] + gain*(z[idx]-target)
+                u[idx] = u[idx] + gain*(target-z[idx])
         return u
