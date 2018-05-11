@@ -10,8 +10,9 @@ class Equation:
             self,
             expression,   # Symbolic expression
             variables,    # List of symbolic vectors or scalars
-            parameters,    # List of symbolic parameters
-            reshape_vectors=True):  # True: Reshape vectors to (n,). False: Keep vectors as (n, 1) or (1, n)
+            parameters,   # List of symbolic parameters
+            shape_as='auto'):   # Choose output as array, ndarray, or auto:
+                                # array if it is one row or one column, ndarray otherwise
         """Init and create lambdified function: f(q1, ..., qn, parameters)."""
         self.expression = expression
         self.variables = variables
@@ -23,9 +24,20 @@ class Equation:
         if type(self.expression) is not Matrix:
             self.expression = Matrix([self.expression])
 
+        # Check that a compatible shape argument is supplied
+        assert shape_as in ['auto', 'array', 'ndarray']
+
+        # Automatically select array if data is scalar or vector
+        if shape_as == 'auto':
+            if 1 in self.expression.shape:
+                shape_as = 'array'
+            else:
+                shape_as = 'ndarray'
+
         # Check whether we want to reshape vectors, and whether
         # we are really dealing with a vector
-        if reshape_vectors and 1 in self.expression.shape:
+        if shape_as == 'array':
+            assert 1 in self.expression.shape
             self.reshape_as_vector = True
             self.number_of_elements = len(self.expression)
         else:
