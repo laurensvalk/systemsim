@@ -284,10 +284,23 @@ class DistributedMechanicalSystem(DistributedSystem):
                     # Numeric neighbor system index
                     jdx = self.index[j]
                     # Add the weighted contribution for neighbor j
-                    u[idx] = u[idx] + self.weights[(i, j)]*(z[jdx]-z[idx]-self.relative_distances[(i, j)])
+                    u[idx] = u[idx] + self.weights[(i, j)]@(z[jdx]-z[idx]-self.relative_distances[(i, j)])
             # Check if this system is a leader
             if i in self.leaders:
                 # If so, add the leader contrl input
                 gain, target = self.leaders[i]
-                u[idx] = u[idx] + gain*(target-z[idx])
+                u[idx] = u[idx] + gain@(target-z[idx])
         return u
+
+
+class DistributedIDAPBC(DistributedMechanicalSystem):
+    """Interconnection of systems with a potential shaping interaction between neighboring agents."""
+
+    # Compared to standard distributed control, the only difference is that we now exchange z instead of q
+    # The second difference is the way the distributed system acts on the system, but this behavior is embedded
+    # in the IDA PBC agents.
+    def coordinated_positions(self, q):
+        """Return variables exchanged over the network."""
+        return [
+            s.z(q[i]) for (i, s) in enumerate(self.systems)
+        ]
