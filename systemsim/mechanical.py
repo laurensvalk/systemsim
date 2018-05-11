@@ -253,6 +253,7 @@ class IDAPBCAgent(HamiltonianMechanicalSystem):
             dVcl_dq,
             J2,
             Kv,
+            Kd,
             z,
             Psi,
             q_initial=None,
@@ -266,6 +267,7 @@ class IDAPBCAgent(HamiltonianMechanicalSystem):
         self.dVcl_dq = dVcl_dq
         self.J2 = J2
         self.Kv = Kv
+        self.Kd = Kd
         self.z = z
         self.Psi = Psi
 
@@ -274,6 +276,7 @@ class IDAPBCAgent(HamiltonianMechanicalSystem):
         assert self.Mcl(zero).shape == (n, n)
         assert self.J2(zero, zero).shape == (n, n)
         assert self.Kv().shape == (m, m)
+        assert self.Kd().shape == (ell, ell)
         assert self.dHcl_dq(zero, zero).shape == (n,)
         assert self.dVcl_dq(zero).shape == (n,)
         assert self.z(zero).shape == (ell,)
@@ -293,16 +296,21 @@ class IDAPBCAgent(HamiltonianMechanicalSystem):
         M = self.M(q)
         J2 = self.J2(q, p)
         Kv = self.Kv()
+        Kd = self.Kd()
         Mcl = self.Mcl(q)
         dH_dq = self.dH_dq(q, p)
         dHcl_dq = self.dHcl_dq(q, p)
         dHcl_dp = self.dHcl_dp(q, p)
         ycl = F.T@self.dHcl_dp(q, p)
+        Psi = self.Psi(q)
 
         # Compute the IDA PBC law
         tau = np.linalg.solve(
             F.T@F,
-            F.T@(dH_dq - Mcl@np.linalg.solve(M, dHcl_dq) + J2@dHcl_dp)
+            F.T@(
+                dH_dq - Mcl@np.linalg.solve(M, dHcl_dq) + J2@dHcl_dp -
+                Mcl@np.linalg.solve(M, Psi@Kd@self.output(state))
+            )
         ) - Kv@ycl
 
         return tau
@@ -377,6 +385,7 @@ class SymbolicIDAPBCAgent(IDAPBCAgent):
             model['dVcl_dq'].function,
             model['J2'].function,
             model['Kv'].function,
+            model['Kd'].function,
             model['z'].function,
             model['Psi'].function,
             q_initial,
