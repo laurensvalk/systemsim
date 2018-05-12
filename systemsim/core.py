@@ -121,6 +121,7 @@ class System():
         self.state_trajectory = odeint(self.__state_change_ode,
                                        self.x_initial, time_range).T
         self.simulation_time = time_range
+        self.x_end = self.state_trajectory[:, -1]
         self.compute_output_trajectory()
         # Further processing if needed
         self.post_simulation_processing()
