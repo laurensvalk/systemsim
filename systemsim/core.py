@@ -159,3 +159,103 @@ class System():
                  'y': self.output_trajectory[i, :],
                  'name': self.output_names[i]
                  } for i in range(self.n_outputs)]
+
+    def make_animation_data(self, time_scale=1, frames_per_second=25):
+        """Interpolate simulation results and kinematic map."""
+        # Time per frame
+        self.animation_time_per_frame = 1/frames_per_second
+
+        # Create time vector of display instants
+        time_end = self.simulation_time[-1]
+        self.animation_time = np.arange(0, time_end/time_scale, self.animation_time_per_frame)
+
+        # Real time samples corresponding to display time
+        self.animation_time_real = self.animation_time*time_scale
+
+        # Interpolate state data to match the display time vector
+        self.animation_states = np.stack(
+            [
+                np.interp(self.animation_time_real, self.simulation_time, self.state_trajectory[i, :])
+                for i in range(self.n_states)
+            ]
+        )
+
+        # Get X and Y coordinates of animated line for each animation time instance
+        self.animation_x = []
+        self.animation_y = []
+        for (k, time) in enumerate(self.animation_time):
+            state = self.animation_states[:, k]
+            x, y = self.get_animation_kinematics(state)
+            self.animation_x.append(x)
+            self.animation_y.append(y)
+
+    def get_animation_frames(self):
+        """Generate Plotly animation frames."""
+        # Plotly frame data format of the kinematics at every simulation time instant
+        framedata = [
+            {
+                'data': [
+                    {'x': self.animation_x[i], 'y': self.animation_y[i]}
+                ]
+            } for i, t in enumerate(self.animation_time)
+        ]
+        # Take first frame as initial plot (before clicking start)
+        firstframe = framedata[0]['data']
+
+        # Legends for frame data
+        firstframe[0]['name'] = 'UAV0'
+
+        return firstframe, framedata
+
+    def get_animation_figure(self, xlim, ylim, title):
+        """Return Plotly Animation Figure for inline plot."""
+        # Get kinematic animation as frama data format
+        firstframe, framedata = self.get_animation_frames()
+
+        # Estimated plot time overhead (miliseconds)
+        overhead_ms = 7
+
+        # Create the figure object
+        animationfigure = {
+            'data': firstframe,
+            'layout': {
+                'xaxis': {'range': xlim, 'autorange': False},
+                'yaxis': {'range': ylim, 'autorange': False, 'scaleanchor': 'x'},
+                'title': title,
+                'updatemenus': [{
+                    'type': 'buttons',
+                    'buttons': [
+                        {
+                            'label': 'Start', 'method': 'animate',
+                            'args': [
+                                framedata, {'frame': {'duration': self.animation_time_per_frame*1000 - overhead_ms, 'redraw': False}}
+                            ]
+                        },
+                        {
+                            'label': 'Stop', 'method': 'animate',
+                            'args': [[None], {
+                                'frame': {'duration': 0, 'redraw': False}, 'mode': 'immediate', 'transition': {'duration': 0}
+                            }]
+                        }
+                    ]
+                }]
+            }
+        }
+        return animationfigure
+
+    def get_animation_kinematics(self, state):
+        """Create line of 2D or 3D points to plot for given state."""
+        # Example points through which we will draw a line
+        # These could be generated as a function of the instantaneous state
+        left = np.array([0, 0])
+        middle = np.array([0, 0])
+        right = np.array([0, 0])
+
+        # Points to draw in x and y
+        points = np.stack([left, middle, right], axis=self.COL)
+        xpoints = points[0, :].tolist()
+        ypoints = points[1, :].tolist()
+
+        # Return the points
+        return xpoints, ypoints
+

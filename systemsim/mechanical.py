@@ -110,6 +110,7 @@ class HamiltonianMechanicalSystem(System):
             R,
             dH_dq,
             dV_dq,
+            animation_kinematics=None,
             q_initial=None,
             p_initial=None,
             exogenous_input_function=None):
@@ -149,6 +150,9 @@ class HamiltonianMechanicalSystem(System):
         assert self.F(q_initial).shape == (self.n, self.m)
         assert self.R(q_initial, p_initial).shape == (self.n, self.n)
         assert self.dH_dq(q_initial, p_initial).shape == self.dV_dq(q_initial).shape == (self.n,)
+
+        # Store the animations kinematic map
+        self.animation_kinematics = animation_kinematics
 
         # Initialize system object
         System.__init__(self, n_states, n_inputs, n_outputs,
@@ -223,6 +227,21 @@ class HamiltonianMechanicalSystem(System):
 
         return x_dot
 
+    def get_animation_kinematics(self, state):
+        """Create line of 2D or 3D points to plot for given state."""
+        # Extract coordinates and velocities from state
+        q, p = self.get_coordinates(state)
+
+        # Evaluate animation map
+        points = self.animation_kinematics(q)
+
+        # Points to draw in x and y
+        xpoints = points[0, :].tolist()
+        ypoints = points[1, :].tolist()
+
+        # Return the points
+        return xpoints, ypoints
+
 
 class IDAPBCAgent(HamiltonianMechanicalSystem):
     """Hamiltonian mechanical system with IDA-PBC as state feedback,
@@ -256,6 +275,7 @@ class IDAPBCAgent(HamiltonianMechanicalSystem):
             Kd,
             z,
             Psi,
+            animation_kinematics=None,
             q_initial=None,
             p_initial=None,
             exogenous_input_function=None):
@@ -283,7 +303,7 @@ class IDAPBCAgent(HamiltonianMechanicalSystem):
         assert self.Psi(zero).shape == (n, ell)
 
         # Pass on the remaining arguments to the Hamiltonian system
-        HamiltonianMechanicalSystem.__init__(self, n, m, ell, M, F, V, R, dH_dq, dV_dq,
+        HamiltonianMechanicalSystem.__init__(self, n, m, ell, M, F, V, R, dH_dq, dV_dq, animation_kinematics,
                                              q_initial, p_initial, exogenous_input_function)
 
     def state_feedback(self, state, time):
@@ -388,6 +408,8 @@ class SymbolicIDAPBCAgent(IDAPBCAgent):
             model['Kd'].function,
             model['z'].function,
             model['Psi'].function,
+            model['animation_kinematics'].function,
             q_initial,
             p_initial,
-            exogenous_input_function)
+            exogenous_input_function,
+        )

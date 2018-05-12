@@ -154,6 +154,36 @@ class Collection(System):
             s.simulation_time = self.simulation_time
             s.compute_output_trajectory()
 
+    def make_animation_data(self, time_scale=1, frames_per_second=25):
+        """Interpolate simulation results and kinematic map for all agents."""
+        # Make the animation data for each system in the network
+        for system in self.systems:
+            system.make_animation_data(time_scale, frames_per_second)
+
+        # Extract several time settings (equal for all agents) from agent 0
+        self.animation_time_per_frame = self.systems[0].animation_time_per_frame
+        self.animation_time = self.systems[0].animation_time
+
+    def get_animation_frames(self):
+        """Generate Plotly animation frames, for all agents in each frame."""
+        # Plotly frame data format of the kinematics at every simulation time instant
+        framedata = [
+            {
+                'data': [
+                    {'x': system.animation_x[i], 'y': system.animation_y[i]}
+                    for system in self.systems
+                ]
+            } for i, t in enumerate(self.animation_time)
+        ]
+        # Take first frame as initial plot (before clicking start)
+        firstframe = framedata[0]['data']
+
+        # Legends for frame data
+        for (i, s) in enumerate(self.systems):
+            firstframe[i]['name'] = str(i)
+
+        return firstframe, framedata
+
 
 class Interconnection(Collection):
     """A collection of systems interacting through inputs and outputs."""
