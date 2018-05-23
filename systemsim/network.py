@@ -151,8 +151,12 @@ class Collection(System):
         state_trajectory_per_system = self.__as_state_per_system(self.state_trajectory)
         for (i, s) in enumerate(self.systems):
             s.state_trajectory = state_trajectory_per_system[i]
+            s.x_end = s.state_trajectory[:, -1]
             s.simulation_time = self.simulation_time
             s.compute_output_trajectory()
+            # If the system itself is a network, process its subsystems too
+            if issubclass(type(s), Collection):
+                s.post_simulation_processing()
 
     def make_animation_data(self, time_scale=1, frames_per_second=25):
         """Interpolate simulation results and kinematic map for all agents."""
