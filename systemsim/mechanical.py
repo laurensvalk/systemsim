@@ -227,6 +227,20 @@ class HamiltonianMechanicalSystem(System):
 
         return x_dot
 
+    def post_simulation_processing(self):
+        """Process simulation results. Compute state dependent signals."""
+        # Extract position and momenta at every time sample
+        q_and_p = [
+            self.get_coordinates(self.state_trajectory[:, k])
+            for (k, time) in enumerate(self.simulation_time)
+        ]
+
+        # z at every timestep
+        self.z_trajectory = np.stack([self.z(q) for (q,p) in q_and_p], axis=self.COL)
+
+        # H at every timestep
+        self.H_trajectory = np.stack([self.H(q,p) for (q,p) in q_and_p], axis=self.COL)
+      
     def get_animation_kinematics(self, state):
         """Create line of 2D or 3D points to plot for given state."""
         # Extract coordinates and velocities from state

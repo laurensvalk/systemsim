@@ -128,16 +128,11 @@ class System():
 
     def compute_output_trajectory(self):
         """Compute the outputs for the previously run simulation."""
-        # Shortcut to calculate output at a given time sample k
-        # in the simulation history
-        output = lambda k: \
-            self.output(self.state_trajectory[:, k],
-                        self.simulation_time[k]).reshape((self.n_outputs, 1))
-
-        # Calculate the outputs at all time steps and concatenate results
-        self.output_trajectory = np.hstack(
-            [output(k) for (k, time) in enumerate(self.simulation_time)]
-        )
+        # Calculate and concatenate output at every timestep
+        self.output_trajectory = np.stack([
+            self.output(self.state_trajectory[:, k], time)
+            for (k, time) in enumerate(self.simulation_time)
+        ], axis=self.COL)
 
     def post_simulation_processing(self):
         """Process simulation results. The basic class does nothing here."""
