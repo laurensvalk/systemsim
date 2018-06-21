@@ -240,7 +240,7 @@ class HamiltonianMechanicalSystem(System):
 
         # H at every timestep
         self.H_trajectory = np.stack([self.H(q,p) for (q,p) in q_and_p], axis=self.COL)
-      
+
     def get_animation_kinematics(self, state):
         """Create line of 2D or 3D points to plot for given state."""
         # Extract coordinates and velocities from state
@@ -258,8 +258,7 @@ class HamiltonianMechanicalSystem(System):
 
 
 class IDAPBCAgent(HamiltonianMechanicalSystem):
-    """Hamiltonian mechanical system with IDA-PBC as state feedback,
-    and matched input matrix for stable cooperation.
+    """Hamiltonian mechanical system with IDA-PBC as state feedback.
 
     This class is similar to HamiltonianMechanicalSystem, but the
     state feedback law now included. It is generated using the

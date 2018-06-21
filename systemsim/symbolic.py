@@ -1,6 +1,5 @@
 """Tools for symbolic derivation of equations of motion."""
 from sympy import lambdify, diff, Matrix
-import cloudpickle
 
 
 class Equation:
@@ -75,20 +74,6 @@ class Equation:
         print("Variables: ", self.variables)
         print("Parameters: ", self.parameters)
         print("Expression is a matrix: ", self.is_matrix)
-
-
-def save_object(filename, data):
-    """Write a Python object to a file."""
-    # Save data to disk
-    with open(filename, 'wb') as file_descriptor:
-        file_descriptor.write(cloudpickle.dumps(data))
-
-
-def load_object(filename):
-    """Load a Python object from a file."""
-    # Load a dictionary of lambda equations
-    with open(filename, 'rb') as f:
-        return cloudpickle.load(f)
 
 
 def make_C(M, q, q_dot):
