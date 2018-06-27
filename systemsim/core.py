@@ -158,6 +158,9 @@ class System():
 
     def make_animation_data(self, time_scale=1, frames_per_second=25):
         """Interpolate simulation results and kinematic map."""
+
+        # TODO generalize for case initial start time is not zero
+
         # Time per frame
         self.animation_time_per_frame = 1/frames_per_second
 
