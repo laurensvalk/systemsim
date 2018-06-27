@@ -254,4 +254,3 @@ class System():
 
         # Return the points
         return xpoints, ypoints
-

@@ -16,7 +16,7 @@ with open(path.join(here, 'README.rst'), encoding='utf-8') as f:
 
 setup(
     name='systemsim',
-    version='0.21',
+    version='0.22',
     description='Simulator for dynamical feedback systems and networks.',
     long_description=long_description,
     url='https://github.com/laurensvalk/systemsim',

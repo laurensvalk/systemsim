@@ -236,10 +236,10 @@ class HamiltonianMechanicalSystem(System):
         ]
 
         # z at every timestep
-        self.z_trajectory = np.stack([self.z(q) for (q,p) in q_and_p], axis=self.COL)
+        self.z_trajectory = np.stack([self.z(q) for (q, p) in q_and_p], axis=self.COL)
 
         # H at every timestep
-        self.H_trajectory = np.stack([self.H(q,p) for (q,p) in q_and_p], axis=self.COL)
+        self.H_trajectory = np.stack([self.H(q, p) for (q, p) in q_and_p], axis=self.COL)
 
     def get_animation_kinematics(self, state):
         """Create line of 2D or 3D points to plot for given state."""
